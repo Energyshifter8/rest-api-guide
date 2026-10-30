@@ -1,0 +1,333 @@
+openapi: 3.0.3
+info:
+  title: Rest API Guide
+  version: 1.0.0
+  description: |
+    Ruby on Rails + MySQL дээр бүтээсэн энгийн REST API.
+
+    **Пост (Post)** болон **Сэтгэгдэл (Comment)** гэсэн 2 нөөц (resource) байна.
+    Нэг пост олон сэтгэгдэлтэй байж болно (`has_many`), сэтгэгдэл бүр заавал
+    нэг постод харьяалагдана (`belongs_to`).
+
+    ### Хэрхэн туршиж үзэх вэ?
+    1. Endpoint дээр дарж нээнэ.
+    2. **Try it out** товчийг дарна.
+    3. Шаардлагатай параметр, body-г бөглөөд **Execute** дарна.
+    4. Доор нь сервер рүү явсан `curl` команд болон ирсэн хариу (Response) харагдана.
+
+    ### Хариуны кодууд
+    | Код | Утга |
+    |-----|------|
+    | `200` | Амжилттай |
+    | `201` | Амжилттай үүсгэсэн |
+    | `204` | Амжилттай устгасан (хариу хоосон) |
+    | `404` | Ийм id-тай бичлэг олдсонгүй |
+    | `422` | Илгээсэн өгөгдөл буруу (жишээ нь гарчиг хоосон) |
+servers:
+  - url: /
+    description: Энэ сервер (localhost:3000)
+tags:
+  - name: Posts
+    description: Пост үүсгэх, харах, засах, устгах
+  - name: Comments
+    description: Тухайн постын сэтгэгдлүүдтэй ажиллах (nested resource — `/posts/{post_id}/comments`)
+
+paths:
+  /posts:
+    get:
+      tags: [Posts]
+      summary: Бүх постыг авах
+      description: Өгөгдлийн санд байгаа бүх постын жагсаалтыг буцаана. Сэтгэгдлүүд орохгүй.
+      responses:
+        "200":
+          description: Постуудын жагсаалт
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/Post" }
+    post:
+      tags: [Posts]
+      summary: Шинэ пост үүсгэх
+      description: |
+        Шинэ пост үүсгэнэ. `title` заавал байх ёстой, байхгүй бол `422` алдаа буцна.
+        Амжилттай бол үүссэн постыг `201` кодтой буцаана.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/PostInput" }
+            example:
+              post: { title: "Миний анхны пост", content: "Rails API сурч байна" }
+      responses:
+        "201":
+          description: Пост амжилттай үүслээ
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Post" }
+        "422":
+          description: Өгөгдөл буруу (гарчиг хоосон)
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ValidationErrors" }
+              example: { title: ["can't be blank"] }
+
+  /posts/{id}:
+    parameters:
+      - $ref: "#/components/parameters/PostId"
+    get:
+      tags: [Posts]
+      summary: Нэг постыг сэтгэгдлүүдтэй нь авах
+      description: Тухайн id-тай постыг түүний бүх сэтгэгдлийн хамт (`comments` массив) буцаана.
+      responses:
+        "200":
+          description: Пост ба сэтгэгдлүүд
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PostWithComments" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    patch:
+      tags: [Posts]
+      summary: Постыг хэсэгчлэн засах
+      description: Зөвхөн илгээсэн талбаруудыг шинэчилнэ. Жишээ нь зөвхөн `title` илгээвэл `content` өөрчлөгдөхгүй.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/PostInput" }
+            example:
+              post: { title: "Шинэчилсэн гарчиг" }
+      responses:
+        "200":
+          description: Шинэчлэгдсэн пост
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Post" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "422":
+          description: Өгөгдөл буруу
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ValidationErrors" }
+    put:
+      tags: [Posts]
+      summary: Постыг засах
+      description: Rails дээр `PUT` нь `PATCH`-тай яг адилхан ажиллана (`posts#update`).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/PostInput" }
+      responses:
+        "200":
+          description: Шинэчлэгдсэн пост
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Post" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "422":
+          description: Өгөгдөл буруу
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ValidationErrors" }
+    delete:
+      tags: [Posts]
+      summary: Постыг устгах
+      description: |
+        Постыг устгана. `dependent: :destroy` тохиргооны ачаар **тухайн постын бүх
+        сэтгэгдэл хамт устна**. Хариу хоосон, `204` кодтой.
+      responses:
+        "204": { description: Амжилттай устгалаа }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /posts/{post_id}/comments:
+    parameters:
+      - $ref: "#/components/parameters/PostIdNested"
+    get:
+      tags: [Comments]
+      summary: Постын бүх сэтгэгдлийг авах
+      description: Зөвхөн `post_id`-д харьяалагдах сэтгэгдлүүдийг буцаана.
+      responses:
+        "200":
+          description: Сэтгэгдлүүдийн жагсаалт
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/Comment" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    post:
+      tags: [Comments]
+      summary: Постод сэтгэгдэл нэмэх
+      description: |
+        `post_id`-г URL-аас авдаг тул body-д илгээх шаардлагагүй.
+        `comment` заавал байх ёстой, хоосон бол `422` буцна.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CommentInput" }
+            example:
+              comment: { comment: "Маш хэрэгтэй пост байна!" }
+      responses:
+        "201":
+          description: Сэтгэгдэл амжилттай үүслээ
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Comment" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "422":
+          description: Өгөгдөл буруу (сэтгэгдэл хоосон)
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ValidationErrors" }
+              example: { comment: ["can't be blank"] }
+
+  /posts/{post_id}/comments/{id}:
+    parameters:
+      - $ref: "#/components/parameters/PostIdNested"
+      - name: id
+        in: path
+        required: true
+        description: Сэтгэгдлийн id
+        schema: { type: integer, example: 1 }
+    get:
+      tags: [Comments]
+      summary: Нэг сэтгэгдэл авах
+      description: Сэтгэгдэл өөр постынх бол `404` буцна (зөвхөн тухайн постын сэтгэгдлүүдээс хайдаг).
+      responses:
+        "200":
+          description: Сэтгэгдэл
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Comment" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    patch:
+      tags: [Comments]
+      summary: Сэтгэгдэл засах
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CommentInput" }
+            example:
+              comment: { comment: "Зассан сэтгэгдэл" }
+      responses:
+        "200":
+          description: Шинэчлэгдсэн сэтгэгдэл
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Comment" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "422":
+          description: Өгөгдөл буруу
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ValidationErrors" }
+    put:
+      tags: [Comments]
+      summary: Сэтгэгдэл засах (PUT)
+      description: "`PATCH`-тай адилхан ажиллана."
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CommentInput" }
+      responses:
+        "200":
+          description: Шинэчлэгдсэн сэтгэгдэл
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Comment" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "422":
+          description: Өгөгдөл буруу
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ValidationErrors" }
+    delete:
+      tags: [Comments]
+      summary: Сэтгэгдэл устгах
+      responses:
+        "204": { description: Амжилттай устгалаа }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+components:
+  parameters:
+    PostId:
+      name: id
+      in: path
+      required: true
+      description: Постын id
+      schema: { type: integer, example: 1 }
+    PostIdNested:
+      name: post_id
+      in: path
+      required: true
+      description: Сэтгэгдэл харьяалагдах постын id
+      schema: { type: integer, example: 1 }
+
+  responses:
+    NotFound:
+      description: Ийм id-тай бичлэг олдсонгүй
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              error: { type: string, description: Алдааны мессеж }
+          example: { error: "Couldn't find Post with 'id'=\"99999\"" }
+
+  schemas:
+    Post:
+      type: object
+      description: Пост (`posts` хүснэгтийн нэг мөр)
+      properties:
+        id: { type: integer, description: Давтагдашгүй дугаар (MySQL автоматаар өгнө), example: 1 }
+        title: { type: string, description: Гарчиг (заавал), example: "Анхны пост" }
+        content: { type: string, nullable: true, description: Агуулга, example: "Rails REST API-ийн жишээ пост" }
+        created_at: { type: string, format: date-time, description: Үүсгэсэн огноо }
+        updated_at: { type: string, format: date-time, description: Сүүлд зассан огноо }
+    PostWithComments:
+      allOf:
+        - $ref: "#/components/schemas/Post"
+        - type: object
+          properties:
+            comments:
+              type: array
+              description: Энэ постын бүх сэтгэгдэл
+              items: { $ref: "#/components/schemas/Comment" }
+    PostInput:
+      type: object
+      required: [post]
+      description: Rails-ийн strong parameters-ийн дагуу талбаруудыг `post` түлхүүр дотор илгээнэ.
+      properties:
+        post:
+          type: object
+          properties:
+            title: { type: string, description: Гарчиг (үүсгэхэд заавал) }
+            content: { type: string, description: Агуулга }
+    Comment:
+      type: object
+      description: Сэтгэгдэл (`comments` хүснэгтийн нэг мөр)
+      properties:
+        id: { type: integer, example: 1 }
+        post_id: { type: integer, description: Харьяалагдах постын id (foreign key), example: 1 }
+        comment: { type: string, description: Сэтгэгдлийн текст, example: "Анхны сэтгэгдэл" }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+    CommentInput:
+      type: object
+      required: [comment]
+      description: Талбаруудыг `comment` түлхүүр дотор илгээнэ.
+      properties:
+        comment:
+          type: object
+          properties:
+            comment: { type: string, description: Сэтгэгдлийн текст (заавал) }
+    ValidationErrors:
+      type: object
+      description: Талбар бүрийн алдааны мессежүүд
+      additionalProperties:
+        type: array
+        items: { type: string }
